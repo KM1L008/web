@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>DopplerLab: Fuente Móvil</title>
+    <meta name="description" content="DopplerLab - Fuente móvil que envía telemetría de movimiento via WebRTC">
+    <!-- PeerJS CDN -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================
+           MOBILE UI - DopplerLab Fuente
+           Diseño enfocado para uso en smartphone
+           ============================================ */
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2035;
+            --accent-cyan: #06d6a0;
+            --accent-blue: #4cc9f0;
+            --accent-purple: #7b2ff7;
+            --accent-red: #ef476f;
+            --accent-yellow: #ffd166;
+            --text-primary: #e8ecf4;
+            --text-secondary: #8892a8;
+            --text-muted: #5a6478;
+            --border-color: rgba(76, 201, 240, 0.12);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* Subtle grid background */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                linear-gradient(rgba(76, 201, 240, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(76, 201, 240, 0.02) 1px, transparent 1px);
+            background-size: 50px 50px;
+            z-index: 0;
+        }
+
+        .mobile-app {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 420px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        /* Header */
+        .mobile-header {
+            text-align: center;
+        }
+        .mobile-header .badge {
+            display: inline-block;
+            padding: 5px 14px;
+            background: rgba(123, 47, 247, 0.12);
+            border: 1px solid rgba(123, 47, 247, 0.3);
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--accent-purple);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 0.75rem;
+        }
+        .mobile-header h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .mobile-header p {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 0.3rem;
+        }
+
+        /* Velocity display */
+        .velocity-ring {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: radial-gradient(circle at center, rgba(76, 201, 240, 0.05), transparent 70%);
+            border: 2px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: var(--transition);
+        }
+        .velocity-ring.approaching {
+            border-color: rgba(6, 214, 160, 0.4);
+            background: radial-gradient(circle at center, rgba(6, 214, 160, 0.08), transparent 70%);
+            box-shadow: 0 0 40px rgba(6, 214, 160, 0.1);
+        }
+        .velocity-ring.receding {
+            border-color: rgba(239, 71, 111, 0.4);
+            background: radial-gradient(circle at center, rgba(239, 71, 111, 0.08), transparent 70%);
+            box-shadow: 0 0 40px rgba(239, 71, 111, 0.1);
+        }
+        .velocity-ring.active-ring {
+            animation: ringPulse 2s ease-in-out infinite;
+        }
+        @keyframes ringPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        .velocity-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            line-height: 1;
+            transition: color 0.3s;
+        }
+        .velocity-number.approaching { color: var(--accent-cyan); }
+        .velocity-number.receding { color: var(--accent-red); }
+        .velocity-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 0.3rem;
+        }
+        .velocity-direction {
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-top: 0.5rem;
+            padding: 4px 12px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.04);
+        }
+
+        /* Info cards */
+        .info-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            width: 100%;
+        }
+        .info-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 1rem;
+            text-align: center;
+        }
+        .info-card-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .info-card-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        /* Connect button */
+        #btn-connect {
+            width: 100%;
+            padding: 18px 24px;
+            border: none;
+            border-radius: var(--radius);
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: var(--transition);
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+        }
+        #btn-connect::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent, rgba(255,255,255,0.1));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #btn-connect:hover::after { opacity: 1; }
+        #btn-connect:active { transform: scale(0.98); }
+        #btn-connect:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        #btn-connect.connected {
+            background: linear-gradient(135deg, var(--accent-cyan), #059669);
+        }
+
+        /* Status */
+        .status-bar {
+            width: 100%;
+            padding: 10px 16px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .status-bar.error { border-color: rgba(239, 71, 111, 0.3); color: var(--accent-red); }
+        .status-bar.success { border-color: rgba(6, 214, 160, 0.3); color: var(--accent-cyan); }
+
+        /* Accel bars */
+        .accel-visual {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .accel-bar {
+            height: 100%;
+            width: 50%;
+            background: var(--accent-blue);
+            border-radius: 4px;
+            transition: width 0.1s, background 0.3s;
+            transform-origin: left;
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-app">
+        <!-- Header -->
+        <div class="mobile-header">
+            <div class="badge">📡 Fuente Móvil</div>
+            <h1>DopplerLab</h1>
+            <p>Sensor de movimiento — Envía velocidad al observador</p>
+        </div>
+
+        <!-- Velocity Ring -->
+        <div class="velocity-ring" id="velocity-ring">
+            <div class="velocity-number" id="velocity-display">0.00</div>
+            <div class="velocity-label">m/s</div>
+            <div class="velocity-direction" id="direction-display">— Estático —</div>
+        </div>
+
+        <!-- Info Row -->
+        <div class="info-row">
+            <div class="info-card">
+                <div class="info-card-label">Aceleración</div>
+                <div class="info-card-value" id="accel-display">0.00 <span style="font-size:0.65rem;color:var(--text-muted)">m/s²</span></div>
+            </div>
+            <div class="info-card">
+                <div class="info-card-label">Paquetes Enviados</div>
+                <div class="info-card-value" id="packets-display">0</div>
+            </div>
+        </div>
+
+        <!-- Acceleration bar -->
+        <div class="accel-visual">
+            <div class="accel-bar" id="accel-bar"></div>
+        </div>
+
+        <!-- Connect Button -->
+        <button id="btn-connect">📡 Conectar e Iniciar Sensores</button>
+
+        <!-- Status -->
+        <div class="status-bar" id="status-bar">Esperando acción...</div>
+    </div>
+
+    <script>
+    /**
+     * ============================================================
+     *  DopplerLab — Fuente Móvil (Smartphone)
+     * ============================================================
+     *  Telemetría:
+     *    Lee aceleración del sensor DeviceMotion y calcula velocidad
+     *    mediante integración numérica de Euler:
+     *
+     *      v(t) = v(t-1) + a(t) × Δt
+     *
+     *    Filtro paso alto: ignora |a| < 0.3 m/s² para eliminar
+     *    ruido del sensor. Si a ≈ 0, decae v progresivamente
+     *    (v *= 0.9) para evitar drift acumulativo.
+     *
+     *    La velocidad calculada se envía al PC observador
+     *    ~15 veces por segundo a través de la conexión P2P.
+     * ============================================================
+     */
+
+    // === CONSTANTES DEL SENSOR ===
+    const ACCEL_THRESHOLD = 0.15;  // m/s² — Umbral reducido para captar movimiento al caminar
+    const DECAY_FACTOR = 0.95;     // Decaimiento suave para mantener velocidad entre pasos
+    const SEND_RATE = 20;          // Envíos por segundo (50ms) — envía siempre, incluso v=0
+    const MAX_VELOCITY = 50;       // m/s — Límite de velocidad razonable
+    const GRAVITY = 9.81;          // Gravedad estándar (m/s²)
+    const SMOOTHING = 0.8;         // Factor de suavizado para estimación de gravedad
+
+    // === ESTADO ===
+    let velocity = 0;
+    let lastTimestamp = null;
+    let peerConn = null;
+    let packetCount = 0;
+    let sendInterval = null;
+    let isConnected = false;
+    let sensorActive = false;
+    // Estimación de gravedad por eje (filtro paso bajo)
+    let gravityEstimate = { x: 0, y: 0, z: 0 };
+    let gravityInitialized = false;
+    let sampleCount = 0;
+
+    // === ELEMENTOS DOM ===
+    const btnConnect = document.getElementById('btn-connect');
+    const statusBar = document.getElementById('status-bar');
+    const velDisplay = document.getElementById('velocity-display');
+    const dirDisplay = document.getElementById('direction-display');
+    const accelDisplay = document.getElementById('accel-display');
+    const packetsDisplay = document.getElementById('packets-display');
+    const accelBar = document.getElementById('accel-bar');
+    const velRing = document.getElementById('velocity-ring');
+
+    // ──────────────────────────────────────────────
+    //  1. LEER PARÁMETRO DE SALA DESDE LA URL
+    // ──────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const salaId = params.get('sala');
+
+    if (!salaId) {
+        statusBar.textContent = '⚠ No se encontró el parámetro "sala" en la URL';
+        statusBar.classList.add('error');
+        btnConnect.disabled = true;
+    }
+
+    // ──────────────────────────────────────────────
+    //  2. CONEXIÓN P2P AL OBSERVADOR
+    // ──────────────────────────────────────────────
+    btnConnect.addEventListener('click', async () => {
+        if (isConnected) return;
+
+        btnConnect.disabled = true;
+        statusBar.textContent = 'Conectando al observador...';
+        statusBar.className = 'status-bar';
+
+        try {
+            // Solicitar permisos de sensor en iOS
+            await requestMotionPermission();
+
+            // Inicializar PeerJS y conectar a la sala
+            const peer = new Peer();
+
+            peer.on('open', (myId) => {
+                console.log('[PeerJS] Mi ID:', myId);
+                statusBar.textContent = 'Conectando a la sala...';
+
+                // Conectar al peer del observador (la "sala")
+                const conn = peer.connect(salaId);
+
+                conn.on('open', () => {
+                    console.log('[PeerJS] ¡Conectado al observador!');
+                    peerConn = conn;
+                    isConnected = true;
+
+                    statusBar.textContent = '✓ Conectado — Sensores activos';
+                    statusBar.classList.add('success');
+                    btnConnect.textContent = '✓ Conectado';
+                    btnConnect.classList.add('connected');
+
+                    // Iniciar sensores y envío de datos
+                    startSensors();
+                    startDataTransmission();
+                });
+
+                conn.on('close', () => {
+                    handleDisconnect();
+                });
+
+                conn.on('error', (err) => {
+                    console.error('[PeerJS] Error de conexión:', err);
+                    statusBar.textContent = '⚠ Error al conectar';
+                    statusBar.classList.add('error');
+                    btnConnect.disabled = false;
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.error('[PeerJS] Error:', err);
+                statusBar.textContent = `⚠ Error P2P: ${err.type}`;
+                statusBar.classList.add('error');
+                btnConnect.disabled = false;
+            });
+
+        } catch (err) {
+            console.error('Error general:', err);
+            statusBar.textContent = `⚠ ${err.message}`;
+            statusBar.classList.add('error');
+            btnConnect.disabled = false;
+        }
+    });
+
+    function handleDisconnect() {
+        isConnected = false;
+        peerConn = null;
+        if (sendInterval) clearInterval(sendInterval);
+        statusBar.textContent = '⚠ Desconectado del observador';
+        statusBar.className = 'status-bar error';
+        btnConnect.textContent = '📡 Reconectar';
+        btnConnect.classList.remove('connected');
+        btnConnect.disabled = false;
+    }
+
+    // ──────────────────────────────────────────────
+    //  3. PERMISOS DE SENSOR (iOS requiere permiso explícito)
+    // ──────────────────────────────────────────────
+    async function requestMotionPermission() {
+        /**
+         * En iOS 13+, se requiere solicitar permiso explícito
+         * para acceder a los sensores de movimiento (DeviceMotion).
+         * Esto debe hacerse tras un gesto del usuario (click).
+         */
+        if (typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function') {
+            const permission = await DeviceMotionEvent.requestPermission();
+            if (permission !== 'granted') {
+                throw new Error('Permiso de sensores denegado');
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    //  4. TELEMETRÍA — DeviceMotion + Integración de Euler
+    // ──────────────────────────────────────────────
+    function startSensors() {
+        if (sensorActive) return;
+        sensorActive = true;
+
+        window.addEventListener('devicemotion', handleMotion, true);
+        console.log('[Sensor] DeviceMotion iniciado');
+
+        // Velocidad ring animation
+        velRing.classList.add('active-ring');
+
+        // ─── TOUCH SIMULATION (fallback para testing) ───
+        // Arrastra verticalmente en la pantalla para simular movimiento
+        let touchStartY = null;
+        let touchActive = false;
+        document.addEventListener('touchstart', (e) => {
+            touchStartY = e.touches[0].clientY;
+            touchActive = true;
+        });
+        document.addEventListener('touchmove', (e) => {
+            if (!touchActive || touchStartY === null) return;
+            e.preventDefault();
+            const dy = touchStartY - e.touches[0].clientY; // + = dedo sube = acercarse
+            // Convertir desplazamiento de píxeles a velocidad simulada
+            velocity = (dy / window.innerHeight) * 20; // escala a ~20 m/s máx
+            velocity = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, velocity));
+            updateMobileUI(velocity, Math.abs(velocity));
+        }, { passive: false });
+        document.addEventListener('touchend', () => {
+            touchActive = false;
+            touchStartY = null;
+            // Decaer suavemente al soltar
+        });
+    }
+
+    function handleMotion(event) {
+        /**
+         * ESTRATEGIA DE LECTURA DE ACELERACIÓN:
+         *
+         * 1. Intentamos event.acceleration (sin gravedad) — ideal.
+         * 2. Si es null (muchos Android), usamos accelerationIncludingGravity
+         *    y restamos la gravedad estimada con un filtro paso bajo.
+         *
+         * Usamos la magnitud de aceleración en los ejes X e Y combinados
+         * con signo basado en el eje dominante, para captar movimiento
+         * sin importar la orientación exacta del teléfono.
+         */
+        let ax = 0, ay = 0, az = 0;
+
+        if (event.acceleration && event.acceleration.x !== null) {
+            // Caso ideal: aceleración sin gravedad disponible
+            ax = event.acceleration.x || 0;
+            ay = event.acceleration.y || 0;
+            az = event.acceleration.z || 0;
+        } else if (event.accelerationIncludingGravity) {
+            /**
+             * FALLBACK: Restar gravedad estimada.
+             * Usamos un filtro paso bajo para estimar la componente
+             * gravitatoria en cada eje:
+             *   gravity = α × gravity_prev + (1-α) × accel_raw
+             *   linear_accel = accel_raw - gravity
+             */
+            const raw = event.accelerationIncludingGravity;
+            const rx = raw.x || 0;
+            const ry = raw.y || 0;
+            const rz = raw.z || 0;
+
+            if (!gravityInitialized && sampleCount < 10) {
+                // Primeras muestras: inicializar estimación de gravedad
+                gravityEstimate.x = rx;
+                gravityEstimate.y = ry;
+                gravityEstimate.z = rz;
+                sampleCount++;
+                if (sampleCount >= 10) gravityInitialized = true;
+                return;
+            }
+
+            // Filtro paso bajo para estimar gravedad
+            gravityEstimate.x = SMOOTHING * gravityEstimate.x + (1 - SMOOTHING) * rx;
+            gravityEstimate.y = SMOOTHING * gravityEstimate.y + (1 - SMOOTHING) * ry;
+            gravityEstimate.z = SMOOTHING * gravityEstimate.z + (1 - SMOOTHING) * rz;
+
+            // Aceleración lineal = raw - gravedad
+            ax = rx - gravityEstimate.x;
+            ay = ry - gravityEstimate.y;
+            az = rz - gravityEstimate.z;
+        } else {
+            return; // Sin sensores disponibles
+        }
+
+        const now = performance.now();
+        if (lastTimestamp === null) {
+            lastTimestamp = now;
+            return;
+        }
+
+        // Δt en segundos
+        const dt = (now - lastTimestamp) / 1000;
+        lastTimestamp = now;
+
+        // Proteger contra dt irreales
+        if (dt <= 0 || dt > 0.5) return;
+
+        /**
+         * ACELERACIÓN COMBINADA:
+         * Combinamos los ejes X e Y para captar movimiento en
+         * cualquier dirección horizontal (no importa cómo
+         * sostenga el usuario el teléfono).
+         *
+         * El signo se determina por el eje con mayor magnitud.
+         * Convención: positivo = acercándose al observador.
+         */
+        const absX = Math.abs(ax);
+        const absY = Math.abs(ay);
+        let a;
+        if (absY >= absX) {
+            a = ay; // Eje Y dominante (teléfono en vertical)
+        } else {
+            a = ax; // Eje X dominante (teléfono en horizontal)
+        }
+
+        // ─── FILTRO PASO ALTO ───
+        if (Math.abs(a) < ACCEL_THRESHOLD) {
+            /**
+             * Decaimiento exponencial suave (0.95):
+             * A 60Hz del sensor, la velocidad tarda ~60 muestras
+             * (~1 segundo) en reducirse al 5% del valor original.
+             * Esto permite mantener la velocidad entre pasos al caminar.
+             */
+            velocity *= DECAY_FACTOR;
+            if (Math.abs(velocity) < 0.02) velocity = 0;
+        } else {
+            /**
+             * INTEGRACIÓN DE EULER:
+             *   v(t) = v(t-1) + a(t) × Δt
+             */
+            velocity += a * dt;
+        }
+
+        // Limitar velocidad a rango razonable
+        velocity = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, velocity));
+
+        // ─── ACTUALIZAR UI ───
+        updateMobileUI(velocity, a);
+    }
+
+    function updateMobileUI(v, accel) {
+        velDisplay.textContent = Math.abs(v).toFixed(2);
+        accelDisplay.innerHTML = `${Math.abs(accel).toFixed(2)} <span style="font-size:0.65rem;color:var(--text-muted)">m/s²</span>`;
+
+        // Dirección visual
+        velDisplay.classList.remove('approaching', 'receding');
+        velRing.classList.remove('approaching', 'receding');
+
+        if (v > 0.3) {
+            velDisplay.classList.add('approaching');
+            velRing.classList.add('approaching');
+            dirDisplay.textContent = '↑ Acercándose';
+            dirDisplay.style.color = 'var(--accent-cyan)';
+        } else if (v < -0.3) {
+            velDisplay.classList.add('receding');
+            velRing.classList.add('receding');
+            dirDisplay.textContent = '↓ Alejándose';
+            dirDisplay.style.color = 'var(--accent-red)';
+        } else {
+            dirDisplay.textContent = '● Estático';
+            dirDisplay.style.color = 'var(--text-secondary)';
+        }
+
+        // Barra de aceleración visual
+        const barWidth = Math.min(100, (Math.abs(accel) / 5) * 100);
+        accelBar.style.width = `${barWidth}%`;
+        accelBar.style.background = v > 0.3 ? 'var(--accent-cyan)' :
+                                     v < -0.3 ? 'var(--accent-red)' : 'var(--accent-blue)';
+    }
+
+    // ──────────────────────────────────────────────
+    //  5. TRANSMISIÓN DE DATOS P2P
+    // ──────────────────────────────────────────────
+    function startDataTransmission() {
+        /**
+         * Enviamos la velocidad calculada al observador
+         * a una tasa de 20 Hz (50ms entre envíos).
+         *
+         * IMPORTANTE: Se envía SIEMPRE, incluso cuando v = 0.
+         * Esto es vital para que el PC pueda detener el movimiento
+         * en el canvas cuando el teléfono se detiene en seco.
+         */
+        const interval = 1000 / SEND_RATE; // 50ms
+
+        sendInterval = setInterval(() => {
+            if (!peerConn || !peerConn.open) {
+                handleDisconnect();
+                return;
+            }
+
+            // Enviar velocidad al observador
+            peerConn.send({ velocity: velocity });
+            packetCount++;
+            packetsDisplay.textContent = packetCount;
+        }, interval);
+
+        console.log(`[Transmisión] Enviando a ${SEND_RATE} Hz`);
+    }
+
+    // ──────────────────────────────────────────────
+    //  6. SIMULACIÓN (Fallback para escritorio/debug)
+    // ──────────────────────────────────────────────
+    // Si no hay sensor de movimiento, usar teclas para debug
+    let debugKeys = {};
+    window.addEventListener('keydown', (e) => { debugKeys[e.key] = true; });
+    window.addEventListener('keyup', (e) => { debugKeys[e.key] = false; });
+
+    // Comprobar si estamos en un dispositivo sin sensores
+    let hasMotionSensor = false;
+    window.addEventListener('devicemotion', function checkSensor(e) {
+        if (e.acceleration && (e.acceleration.x !== null || e.acceleration.y !== null)) {
+            hasMotionSensor = true;
+        }
+        window.removeEventListener('devicemotion', checkSensor);
+    });
+
+    // Fallback: simular con teclado tras 2 segundos
+    setTimeout(() => {
+        if (!hasMotionSensor && sensorActive) {
+            console.log('[Debug] No se detectó sensor. Usa ↑/↓ para simular.');
+            statusBar.textContent += ' (Teclado: ↑↓ para simular)';
+
+            setInterval(() => {
+                let simAccel = 0;
+                if (debugKeys['ArrowUp']) simAccel = 3;
+                if (debugKeys['ArrowDown']) simAccel = -3;
+
+                if (Math.abs(simAccel) < ACCEL_THRESHOLD) {
+                    velocity *= DECAY_FACTOR;
+                    if (Math.abs(velocity) < 0.05) velocity = 0;
+                } else {
+                    velocity += simAccel * 0.066;
+                }
+                velocity = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, velocity));
+                updateMobileUI(velocity, simAccel);
+            }, 66);
+        }
+    }, 2000);
+
+    </script>
+</body>
+</html>

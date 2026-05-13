@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DopplerLab: Estación Base</title>
+    <meta name="description" content="DopplerLab - Demostración interactiva del Efecto Doppler en tiempo real usando WebRTC P2P">
+    <!-- PeerJS CDN -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- QRCode.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================
+           DESIGN SYSTEM - DopplerLab Dark/Scientific UI
+           ============================================ */
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2035;
+            --bg-card-hover: #1f2847;
+            --accent-cyan: #06d6a0;
+            --accent-blue: #4cc9f0;
+            --accent-purple: #7b2ff7;
+            --accent-red: #ef476f;
+            --accent-yellow: #ffd166;
+            --text-primary: #e8ecf4;
+            --text-secondary: #8892a8;
+            --text-muted: #5a6478;
+            --border-color: rgba(76, 201, 240, 0.12);
+            --glow-cyan: 0 0 30px rgba(6, 214, 160, 0.15);
+            --glow-blue: 0 0 30px rgba(76, 201, 240, 0.15);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                linear-gradient(rgba(76, 201, 240, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(76, 201, 240, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: 0;
+            animation: gridMove 20s linear infinite;
+        }
+        @keyframes gridMove {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(60px, 60px); }
+        }
+
+        .app-container {
+            position: relative;
+            z-index: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+        header .badge {
+            display: inline-block;
+            padding: 6px 16px;
+            background: rgba(6, 214, 160, 0.1);
+            border: 1px solid rgba(6, 214, 160, 0.25);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 1rem;
+        }
+        header h1 {
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.2;
+        }
+        header p {
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            font-size: 1rem;
+        }
+
+        /* Dashboard grid */
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 1.5rem;
+        }
+
+        /* Card base style */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 1.8rem;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+            opacity: 0.6;
+        }
+        .card:hover {
+            border-color: rgba(76, 201, 240, 0.25);
+            box-shadow: var(--glow-blue);
+        }
+        .card-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-secondary);
+            margin-bottom: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* Connection card - QR */
+        .connection-card { grid-column: 1; grid-row: 1; }
+        #qr-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+        #qrcode {
+            background: #fff;
+            padding: 16px;
+            border-radius: var(--radius-sm);
+            display: inline-block;
+        }
+        #qrcode img, #qrcode canvas { display: block; }
+        #connection-status {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 8px;
+        }
+        .connected-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(6, 214, 160, 0.12);
+            border: 1px solid rgba(6, 214, 160, 0.3);
+            border-radius: var(--radius-sm);
+            color: var(--accent-cyan);
+            font-weight: 600;
+            font-size: 1rem;
+            animation: fadeInUp 0.5s ease;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Telemetry card */
+        .telemetry-card { grid-column: 2; grid-row: 1; }
+        .metric {
+            text-align: center;
+            padding: 1.5rem 0;
+        }
+        .metric-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 4rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            line-height: 1;
+            transition: color 0.3s;
+        }
+        .metric-value.approaching { color: var(--accent-cyan); }
+        .metric-value.receding { color: var(--accent-red); }
+        .metric-unit {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+        .metric-secondary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+        .metric-sm-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .metric-sm-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Audio control card */
+        .audio-card { grid-column: 1; grid-row: 2; }
+        #btn-audio {
+            width: 100%;
+            padding: 14px 24px;
+            border: 1px solid rgba(6, 214, 160, 0.3);
+            border-radius: var(--radius-sm);
+            background: linear-gradient(135deg, rgba(6, 214, 160, 0.1), rgba(76, 201, 240, 0.1));
+            color: var(--accent-cyan);
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            letter-spacing: 0.5px;
+        }
+        #btn-audio:hover {
+            background: linear-gradient(135deg, rgba(6, 214, 160, 0.2), rgba(76, 201, 240, 0.2));
+            box-shadow: var(--glow-cyan);
+            transform: translateY(-2px);
+        }
+        #btn-audio:active { transform: translateY(0); }
+        #btn-audio.active {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: var(--bg-primary);
+            border-color: transparent;
+        }
+        .formula-box {
+            margin-top: 1.2rem;
+            padding: 1rem;
+            background: rgba(0,0,0,0.3);
+            border-radius: var(--radius-sm);
+            border-left: 3px solid var(--accent-purple);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            line-height: 1.8;
+        }
+        .formula-box .highlight {
+            color: var(--accent-blue);
+            font-weight: 600;
+        }
+
+        /* Wave canvas card */
+        .wave-card { grid-column: 2; grid-row: 2; }
+        #wave-canvas {
+            width: 100%;
+            height: 280px;
+            border-radius: var(--radius-sm);
+            background: rgba(0,0,0,0.25);
+            display: block;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            .connection-card, .telemetry-card, .audio-card, .wave-card {
+                grid-column: 1;
+                grid-row: auto;
+            }
+            header h1 { font-size: 1.8rem; }
+            .metric-value { font-size: 3rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header>
+            <div class="badge">⚡ WebRTC P2P — Sin Backend</div>
+            <h1>DopplerLab: Estación Base</h1>
+            <p>Observador estático — Recibe telemetría de la fuente móvil</p>
+        </header>
+
+        <!-- Dashboard -->
+        <div class="dashboard">
+            <!-- Connection / QR Card -->
+            <div class="card connection-card" id="card-connection">
+                <div class="card-title"><span class="dot"></span> Conexión P2P</div>
+                <div id="qr-container">
+                    <div id="qrcode"></div>
+                    <div id="connection-status">Generando enlace P2P...</div>
+                </div>
+            </div>
+
+            <!-- Telemetry Card -->
+            <div class="card telemetry-card">
+                <div class="card-title"><span class="dot"></span> Telemetría en Tiempo Real</div>
+                <div class="metric">
+                    <div class="metric-value" id="velocity-display">0.00</div>
+                    <div class="metric-unit">m/s — Velocidad de la Fuente</div>
+                </div>
+                <div class="metric-secondary">
+                    <div>
+                        <div class="metric-sm-label">Frecuencia Percibida</div>
+                        <div class="metric-sm-value" id="freq-display">440.00 <span style="font-size:0.7rem;color:var(--text-muted)">Hz</span></div>
+                    </div>
+                    <div>
+                        <div class="metric-sm-label">Estado</div>
+                        <div class="metric-sm-value" id="state-display" style="font-size:1rem;">— Esperando —</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Control Card -->
+            <div class="card audio-card">
+                <div class="card-title"><span class="dot"></span> Motor de Audio Doppler</div>
+                <button id="btn-audio">▶ Iniciar Audio de Prueba (440 Hz)</button>
+                <div class="formula-box">
+                    <!-- Fórmula del Efecto Doppler (observador estático) -->
+                    <span class="highlight">f' = f × ( v_sonido / (v_sonido − v_fuente) )</span><br>
+                    f = 440 Hz &nbsp;|&nbsp; v_sonido = 343 m/s<br>
+                    v_obs = 0 (observador estático)
+                </div>
+            </div>
+
+            <!-- Wave Visualization Card -->
+            <div class="card wave-card">
+                <div class="card-title"><span class="dot"></span> Visualización de Ondas</div>
+                <canvas id="wave-canvas"></canvas>
+            </div>
+        </div>
+
+        <footer>DopplerLab &copy; 2026 — Simulación del Efecto Doppler con WebRTC</footer>
+    </div>
+
+    <script>
+    /**
+     * ============================================================
+     *  DopplerLab — Estación Base (Observador)
+     * ============================================================
+     *  Física:
+     *    El Efecto Doppler describe cómo la frecuencia percibida
+     *    cambia cuando hay movimiento relativo entre fuente y
+     *    observador. Con observador estático (v_o = 0):
+     *
+     *    f' = f₀ × (v_sonido / (v_sonido − v_fuente))
+     *
+     *    - v_fuente > 0 → se acerca → f' > f₀ (tono más agudo)
+     *    - v_fuente < 0 → se aleja  → f' < f₀ (tono más grave)
+     *    - |v_fuente| ≥ v_sonido → singularidad (se limita)
+     * ============================================================
+     */
+
+    // === CONSTANTES FÍSICAS ===
+    const V_SONIDO = 343;      // Velocidad del sonido en aire (m/s)
+    const F_BASE = 440;        // Frecuencia base del tono (Hz) — La A4
+    const MAX_FREQ = 2000;     // Límite superior de frecuencia
+    const MIN_FREQ = 80;       // Límite inferior de frecuencia
+
+    // === CONSTANTES DE POSICIÓN ===
+    const DISTANCIA_INICIAL = 500;  // Posición inicial de la fuente (metros virtuales)
+    const DISTANCIA_MAX = 1000;     // Límite máximo de alejamiento
+    const FACTOR_ESCALA = 1.0;      // Factor de escala temporal para integración
+    const GAIN_REF_DIST = 50;       // Distancia de referencia para ganancia máxima
+
+    // === ESTADO DE LA APP ===
+    let currentVelocity = 0;
+    let distanciaFuente = DISTANCIA_INICIAL; // Posición actual de la fuente
+    let lastFrameTime = null;       // Para integración de posición en el loop
+    let audioCtx = null;
+    let oscillator = null;
+    let gainNode = null;
+    let audioStarted = false;
+    let peerConnection = null;
+
+    // ──────────────────────────────────────────────
+    //  1. INICIALIZACIÓN P2P (PeerJS)
+    // ──────────────────────────────────────────────
+    const peer = new Peer();
+    const statusEl = document.getElementById('connection-status');
+    const qrContainer = document.getElementById('qr-container');
+
+    peer.on('open', (id) => {
+        console.log('[PeerJS] Mi ID:', id);
+        statusEl.textContent = `ID: ${id.substring(0, 12)}... — Escanea el QR`;
+
+        // Construir URL para mobile.html con el parámetro sala
+        const baseUrl = window.location.href.replace(/\/[^/]*$/, '/');
+        const mobileUrl = `${baseUrl}mobile.html?sala=${id}`;
+        console.log('[QR] URL generada:', mobileUrl);
+
+        // Generar código QR
+        document.getElementById('qrcode').innerHTML = '';
+        new QRCode(document.getElementById('qrcode'), {
+            text: mobileUrl,
+            width: 200,
+            height: 200,
+            colorDark: '#0a0e17',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    });
+
+    peer.on('error', (err) => {
+        console.error('[PeerJS] Error:', err);
+        statusEl.textContent = '⚠ Error de conexión P2P';
+        statusEl.style.color = 'var(--accent-red)';
+    });
+
+    // ──────────────────────────────────────────────
+    //  2. RECEPCIÓN DE DATOS (Conexión entrante)
+    // ──────────────────────────────────────────────
+    peer.on('connection', (conn) => {
+        peerConnection = conn;
+        console.log('[PeerJS] Dispositivo conectado');
+
+        // Actualizar UI — ocultar QR y mostrar estado conectado
+        qrContainer.innerHTML = `
+            <div class="connected-badge">
+                <span style="font-size:1.3rem;">📱</span>
+                Fuente Conectada
+            </div>
+            <div style="margin-top:1rem;font-size:0.8rem;color:var(--text-muted);">
+                Recibiendo telemetría en tiempo real
+            </div>
+        `;
+
+        conn.on('data', (data) => {
+            /**
+             * Recibimos la velocidad calculada por el móvil.
+             * Convención de signo:
+             *   + positivo = fuente se acerca al observador
+             *   − negativo = fuente se aleja del observador
+             *
+             * Solo almacenamos la velocidad aquí. El loop principal
+             * (requestAnimationFrame) se encarga de integrar la
+             * posición, actualizar audio y renderizar el canvas.
+             */
+            if (typeof data === 'object' && data.velocity !== undefined) {
+                currentVelocity = parseFloat(data.velocity) || 0;
+            } else {
+                currentVelocity = parseFloat(data) || 0;
+            }
+        });
+
+        conn.on('close', () => {
+            console.log('[PeerJS] Desconectado');
+            document.getElementById('state-display').textContent = '⚠ Desconectado';
+            document.getElementById('state-display').style.color = 'var(--accent-red)';
+        });
+    });
+
+    // ──────────────────────────────────────────────
+    //  3. ACTUALIZACIÓN DE UI TELEMÉTRICA
+    // ──────────────────────────────────────────────
+    function updateTelemetryUI(v) {
+        const velEl = document.getElementById('velocity-display');
+        const freqEl = document.getElementById('freq-display');
+        const stateEl = document.getElementById('state-display');
+
+        velEl.textContent = Math.abs(v).toFixed(2);
+
+        // Color según dirección
+        velEl.classList.remove('approaching', 'receding');
+        if (v > 0.3) {
+            velEl.classList.add('approaching');
+            stateEl.textContent = '↑ Acercándose';
+            stateEl.style.color = 'var(--accent-cyan)';
+        } else if (v < -0.3) {
+            velEl.classList.add('receding');
+            stateEl.textContent = '↓ Alejándose';
+            stateEl.style.color = 'var(--accent-red)';
+        } else {
+            stateEl.textContent = '● Estático';
+            stateEl.style.color = 'var(--text-secondary)';
+        }
+
+        // Calcular y mostrar frecuencia percibida
+        const fPrime = calculateDopplerFrequency(v);
+        freqEl.innerHTML = `${fPrime.toFixed(2)} <span style="font-size:0.7rem;color:var(--text-muted)">Hz</span>`;
+    }
+
+    // ──────────────────────────────────────────────
+    //  4. MOTOR DE AUDIO — Web Audio API
+    // ──────────────────────────────────────────────
+    document.getElementById('btn-audio').addEventListener('click', toggleAudio);
+
+    function toggleAudio() {
+        const btn = document.getElementById('btn-audio');
+        if (!audioStarted) {
+            // Crear contexto de audio
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Cadena: Oscillator → GainNode (espacial) → Destino (parlantes)
+            oscillator = audioCtx.createOscillator();
+            gainNode = audioCtx.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(F_BASE, audioCtx.currentTime);
+
+            /**
+             * GANANCIA ESPACIAL:
+             * gain = GAIN_REF_DIST / distanciaFuente (limitado a [0, 1])
+             * A menor distancia → mayor volumen. A mayor distancia → menor.
+             */
+            const initialGain = Math.min(1.0, GAIN_REF_DIST / Math.max(1, distanciaFuente));
+            gainNode.gain.setValueAtTime(initialGain, audioCtx.currentTime);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.start();
+
+            audioStarted = true;
+            btn.textContent = '⏹ Detener Audio';
+            btn.classList.add('active');
+        } else {
+            oscillator.stop();
+            audioCtx.close();
+            audioStarted = false;
+            oscillator = null;
+            audioCtx = null;
+
+            btn.textContent = '▶ Iniciar Audio de Prueba (440 Hz)';
+            btn.classList.remove('active');
+        }
+    }
+
+    /**
+     * Calcula la frecuencia Doppler percibida.
+     *
+     * Fórmula (observador estático, v_o = 0):
+     *   f' = f₀ × (v_sonido / (v_sonido − v_fuente))
+     *
+     * Cuando v_fuente se acerca a v_sonido, f' → ∞ (limitamos).
+     * Cuando v_fuente es negativo, f' < f₀.
+     */
+    function calculateDopplerFrequency(vSource) {
+        // Protección contra singularidad (v_fuente ≈ v_sonido)
+        const clampedV = Math.max(-V_SONIDO * 0.95, Math.min(V_SONIDO * 0.95, vSource));
+        const fPrime = F_BASE * (V_SONIDO / (V_SONIDO - clampedV));
+        return Math.max(MIN_FREQ, Math.min(MAX_FREQ, fPrime));
+    }
+
+    /**
+     * Actualiza frecuencia Doppler Y ganancia espacial del audio.
+     * - Frecuencia: basada en velocidad (Efecto Doppler)
+     * - Ganancia: inversamente proporcional a distanciaFuente
+     */
+    function updateAudio(vSource, dist) {
+        if (!audioStarted || !oscillator) return;
+
+        // Frecuencia Doppler
+        const fPrime = calculateDopplerFrequency(vSource);
+        oscillator.frequency.linearRampToValueAtTime(fPrime, audioCtx.currentTime + 0.05);
+
+        // Ganancia espacial: gain = refDist / distancia, clamped [0, 1]
+        const spatialGain = Math.min(1.0, GAIN_REF_DIST / Math.max(1, dist));
+        gainNode.gain.linearRampToValueAtTime(spatialGain, audioCtx.currentTime + 0.05);
+    }
+
+    // ──────────────────────────────────────────────
+    //  5. LOOP PRINCIPAL — Posición + Audio + Canvas
+    // ──────────────────────────────────────────────
+    const canvas = document.getElementById('wave-canvas');
+    const ctx = canvas.getContext('2d');
+
+    /**
+     * LOOP PRINCIPAL (requestAnimationFrame):
+     *
+     * 1. POSICIÓN: Integra velocidad → distancia
+     *    distanciaFuente -= velocidad × Δt × factorEscala
+     *    (v>0 = se acerca → distancia decrece)
+     *
+     * 2. AUDIO: Actualiza frecuencia (Doppler) y ganancia (espacial)
+     *
+     * 3. CANVAS: Dibuja observador (izquierda), fuente (posición
+     *    dinámica), y ondas concéntricas con compresión/expansión.
+     */
+    let waves = [];
+    let lastWaveTime = 0;
+    const WAVE_INTERVAL = 400;
+
+    function resizeCanvas() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width - 56;
+        canvas.height = 280;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    function mainLoop(timestamp) {
+        requestAnimationFrame(mainLoop);
+
+        // ─── INTEGRACIÓN DE POSICIÓN ───
+        if (lastFrameTime === null) { lastFrameTime = timestamp; }
+        const dt = (timestamp - lastFrameTime) / 1000; // Δt en segundos
+        lastFrameTime = timestamp;
+        if (dt > 0 && dt < 0.5) {
+            /**
+             * distanciaFuente -= velocidad × Δt × factor
+             * Si v > 0 (se acerca) → distancia disminuye hacia 0
+             * Si v < 0 (se aleja) → distancia aumenta
+             */
+            distanciaFuente -= currentVelocity * dt * FACTOR_ESCALA;
+            distanciaFuente = Math.max(0, Math.min(DISTANCIA_MAX, distanciaFuente));
+        }
+
+        // ─── ACTUALIZAR UI TELEMÉTRICA ───
+        updateTelemetryUI(currentVelocity);
+
+        // ─── ACTUALIZAR AUDIO (frecuencia Doppler + ganancia espacial) ───
+        updateAudio(currentVelocity, distanciaFuente);
+
+        // ─── RENDERIZAR CANVAS ───
+        renderCanvas(timestamp);
+    }
+
+    function renderCanvas(timestamp) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const cW = canvas.width;
+        const cH = canvas.height;
+        const centerY = cH / 2;
+
+        // Observador fijo en el lado izquierdo
+        const observerX = 40;
+
+        // Fuente: posición X dinámica basada en distanciaFuente
+        // Mapeamos distanciaFuente [0..DISTANCIA_MAX] → píxeles [observerX..cW-30]
+        const sourceMinX = observerX + 20;
+        const sourceMaxX = cW - 30;
+        const normalizedDist = distanciaFuente / DISTANCIA_MAX;
+        const sourceX = sourceMinX + normalizedDist * (sourceMaxX - sourceMinX);
+
+        // ─── Generar frente de onda desde la posición actual de la fuente ───
+        if (timestamp - lastWaveTime > WAVE_INTERVAL) {
+            waves.push({ x: sourceX, y: centerY, radius: 5, birth: timestamp });
+            lastWaveTime = timestamp;
+            if (waves.length > 25) waves.shift();
+        }
+
+        // ─── Dibujar ondas concéntricas ───
+        waves.forEach((wave) => {
+            const age = (timestamp - wave.birth) / 1000;
+            const speed = 120;
+            wave.radius = 5 + age * speed;
+
+            const maxRadius = Math.max(cW, cH);
+            const alpha = Math.max(0, 1 - wave.radius / maxRadius);
+            if (alpha <= 0) return;
+
+            let color;
+            if (currentVelocity > 0.3) {
+                color = `rgba(6, 214, 160, ${alpha * 0.6})`;
+            } else if (currentVelocity < -0.3) {
+                color = `rgba(239, 71, 111, ${alpha * 0.6})`;
+            } else {
+                color = `rgba(76, 201, 240, ${alpha * 0.5})`;
+            }
+
+            ctx.beginPath();
+            ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        });
+
+        // ─── Dibujar Observador (estático, izquierda) ───
+        ctx.beginPath();
+        ctx.arc(observerX, centerY, 8, 0, Math.PI * 2);
+        ctx.fillStyle = '#4cc9f0';
+        ctx.shadowColor = '#4cc9f0';
+        ctx.shadowBlur = 12;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Etiqueta observador
+        ctx.fillStyle = 'rgba(232, 236, 244, 0.5)';
+        ctx.font = '11px Inter, sans-serif';
+        ctx.fillText('👁 Observador', observerX - 15, centerY + 25);
+
+        // ─── Dibujar Fuente (posición dinámica) ───
+        const srcColor = currentVelocity > 0.3 ? '#06d6a0' :
+                          currentVelocity < -0.3 ? '#ef476f' : '#ffd166';
+        ctx.beginPath();
+        ctx.arc(sourceX, centerY, 6, 0, Math.PI * 2);
+        ctx.fillStyle = srcColor;
+        ctx.shadowColor = srcColor;
+        ctx.shadowBlur = 15;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Etiqueta fuente
+        ctx.fillStyle = 'rgba(232, 236, 244, 0.4)';
+        ctx.fillText('📡 Fuente', sourceX - 18, centerY - 15);
+
+        // ─── Línea de referencia entre observador y fuente ───
+        ctx.beginPath();
+        ctx.moveTo(observerX + 12, centerY);
+        ctx.lineTo(sourceX - 10, centerY);
+        ctx.strokeStyle = 'rgba(232, 236, 244, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 6]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // ─── Distancia numérica sobre la línea ───
+        const midX = (observerX + sourceX) / 2;
+        ctx.fillStyle = 'rgba(232, 236, 244, 0.35)';
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${distanciaFuente.toFixed(0)} m`, midX, centerY - 8);
+        ctx.textAlign = 'start';
+    }
+
+    requestAnimationFrame(mainLoop);
+
+    </script>
+</body>
+</html>
